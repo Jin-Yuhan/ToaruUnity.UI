@@ -1,0 +1,15 @@
+{
+    "name": "Unity.Toaru.UI.Editor",
+    "references": [
+        "GUID:f93711d43254ba84a98eae48b57aac43"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
