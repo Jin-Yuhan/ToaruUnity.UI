@@ -1,8 +1,9 @@
 {
   "name": "com.toaru.unity.ui",
   "displayName": "Toaru Unity no UI",
-  "version": "0.1.1",
+  "version": "0.2.6-preview",
   "unity": "2019.4",
+  "unityRelease": "0f1",
   "description": "A simple UI framework.",
   "keywords": [
     "ui"
@@ -13,5 +14,13 @@
     "email": "1024751595@qq.com",
     "url": "https://jin-yuhan.github.io/"
   },
-  "unityRelease": "0f1"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jin-Yuhan/ToaruUnity.UI.git"
+  },
+  "samples": {
+    "displayName": "FadeInOutUI",
+    "description": "简单演示一个淡入淡出的UI界面",
+    "path": "Samples~/FadeInOutUI"
+  }
 }

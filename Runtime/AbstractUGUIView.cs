@@ -1,6 +1,5 @@
-﻿using System;
+﻿using System.Collections;
 using UnityEngine;
-using System.Collections;
 
 #pragma warning disable IDE0032
 

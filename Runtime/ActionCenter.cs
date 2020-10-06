@@ -32,8 +32,8 @@ namespace ToaruUnity.UI
         /// <summary>
         /// 当状态改变时的处理方法
         /// </summary>
-        /// <param name="store">当前的状态</param>
-        public delegate void ActionStateChangeHandler(IActionState store);
+        /// <param name="state">当前的状态</param>
+        public delegate void StateChangeHandler(IActionState state);
 
         // 如果返回值为true，自动调用StateChangeHandler
         private delegate bool ActionHandler();
@@ -52,9 +52,9 @@ namespace ToaruUnity.UI
         private const int s_MaxParameterCount = 4;
 
 
-        private IReadOnlyDictionary<int, Delegate> m_ActionMap; // may be null
+        private IReadOnlyDictionary<string, Delegate> m_ActionMap; // may be null
         private List<IEnumerator<bool>> m_Coroutines; // may be null
-        private ActionStateChangeHandler m_StateChangeHandler;
+        private StateChangeHandler m_StateChangeHandler;
         private IActionState m_State;
 
         /// <summary>
@@ -65,7 +65,7 @@ namespace ToaruUnity.UI
         /// <summary>
         /// 获取ActionMap
         /// </summary>
-        internal IEnumerable<KeyValuePair<int, Delegate>> ActionMap => m_ActionMap;
+        internal IEnumerable<KeyValuePair<string, Delegate>> ActionMap => m_ActionMap;
 
         /// <summary>
         /// 获取操作的数量
@@ -77,13 +77,32 @@ namespace ToaruUnity.UI
         /// </summary>
         public int ExecutingCoroutineCount => m_Coroutines == null ? 0 : m_Coroutines.Count;
 
+        /// <summary>
+        /// 获取指定名称的操作的信息
+        /// </summary>
+        /// <param name="actionName">查询的操作的名称</param>
+        /// <returns>如果查询到操作，则返回操作的信息对象；否则返回null</returns>
+        public ActionInfo this[string actionName]
+        {
+            get
+            {
+                if (TryGetActionHandler(actionName, out Delegate func))
+                {
+                    MethodInfo method = func.Method;
+                    return new ActionInfo(this, actionName, method);
+                }
+
+                return default;
+            }
+        }
+
 
         protected ActionCenter() { }
 
         
-        public void Dispatch(int id)
+        public void Dispatch(string name)
         {
-            if (TryGetActionHandler(id, out Delegate func))
+            if (TryGetActionHandler(name, out Delegate func))
             {
                 switch (func)
                 {
@@ -105,9 +124,9 @@ namespace ToaruUnity.UI
             }
         }
 
-        public void Dispatch<T0>(int id, T0 arg0)
+        public void Dispatch<T0>(string name, T0 arg0)
         {
-            if (TryGetActionHandler(id, out Delegate func))
+            if (TryGetActionHandler(name, out Delegate func))
             {
                 switch (func)
                 {
@@ -129,9 +148,9 @@ namespace ToaruUnity.UI
             }
         }
 
-        public void Dispatch<T0, T1>(int id, T0 arg0, T1 arg1)
+        public void Dispatch<T0, T1>(string name, T0 arg0, T1 arg1)
         {
-            if (TryGetActionHandler(id, out Delegate func))
+            if (TryGetActionHandler(name, out Delegate func))
             {
                 switch (func)
                 {
@@ -153,9 +172,9 @@ namespace ToaruUnity.UI
             }
         }
 
-        public void Dispatch<T0, T1, T2>(int id, T0 arg0, T1 arg1, T2 arg2)
+        public void Dispatch<T0, T1, T2>(string name, T0 arg0, T1 arg1, T2 arg2)
         {
-            if (TryGetActionHandler(id, out Delegate func))
+            if (TryGetActionHandler(name, out Delegate func))
             {
                 switch (func)
                 {
@@ -177,9 +196,9 @@ namespace ToaruUnity.UI
             }
         }
 
-        public void Dispatch<T0, T1, T2, T3>(int id, T0 arg0, T1 arg1, T2 arg2, T3 arg3)
+        public void Dispatch<T0, T1, T2, T3>(string name, T0 arg0, T1 arg1, T2 arg2, T3 arg3)
         {
-            if (TryGetActionHandler(id, out Delegate func))
+            if (TryGetActionHandler(name, out Delegate func))
             {
                 switch (func)
                 {
@@ -268,7 +287,7 @@ namespace ToaruUnity.UI
             Profiler.EndSample();
         }
 
-        internal void RegisterStateChangeHandler(ActionStateChangeHandler stateChangeHandler)
+        internal void RegisterStateChangeHandler(StateChangeHandler stateChangeHandler)
         {
             m_StateChangeHandler = stateChangeHandler ?? throw new ArgumentNullException(nameof(stateChangeHandler));
         }
@@ -278,7 +297,7 @@ namespace ToaruUnity.UI
             Initialize(GetActionMap(), manager);
         }
 
-        private void Initialize(IReadOnlyDictionary<int, Delegate> actionMap, UIManager manager)
+        private void Initialize(IReadOnlyDictionary<string, Delegate> actionMap, UIManager manager)
         {
             m_ActionMap = actionMap;
             m_Coroutines = null;
@@ -287,7 +306,7 @@ namespace ToaruUnity.UI
             Manager = manager ?? throw new ArgumentNullException(nameof(manager));
         }
 
-        private bool TryGetActionHandler(int id, out Delegate func)
+        private bool TryGetActionHandler(string actionName, out Delegate func)
         {
             if (m_ActionMap == null)
             {
@@ -295,7 +314,7 @@ namespace ToaruUnity.UI
                 return false;
             }
 
-            return m_ActionMap.TryGetValue(id, out func);
+            return m_ActionMap.TryGetValue(actionName, out func);
         }
 
         private void AddCoroutine(IEnumerator<bool> routine)
@@ -308,11 +327,11 @@ namespace ToaruUnity.UI
             m_Coroutines.Add(routine);
         }
 
-        private IReadOnlyDictionary<int, Delegate> GetActionMap()
+        private IReadOnlyDictionary<string, Delegate> GetActionMap()
         {
             Profiler.BeginSample("ActionCenter.GetActionMap");
 
-            Dictionary<int, Delegate> map = null;
+            Dictionary<string, Delegate> map = null;
             BindingFlags flags = GetBindingFlagsForActionHandler();
 
             if (flags != BindingFlags.Default)
@@ -322,7 +341,7 @@ namespace ToaruUnity.UI
 
                 foreach (MethodInfo method in methods)
                 {
-                    object[] attrs = method.GetCustomAttributes(typeof(HandleActionAttribute), false);
+                    object[] attrs = method.GetCustomAttributes(typeof(ActionAttribute), false);
 
                     if (attrs.Length == 0)
                         continue;
@@ -343,14 +362,14 @@ namespace ToaruUnity.UI
 
                     for (int i = 0; i < attrs.Length; i++)
                     {
-                        HandleActionAttribute attr = attrs[i] as HandleActionAttribute;
+                        ActionAttribute attr = attrs[i] as ActionAttribute;
 
                         if (map == null)
                         {
-                            map = new Dictionary<int, Delegate>();
+                            map = new Dictionary<string, Delegate>();
                         }
 
-                        map.Add(attr.ActionId, callback);
+                        map.Add(attr.ActionName ?? method.Name, callback);
                     }
                 }
             }
@@ -364,12 +383,12 @@ namespace ToaruUnity.UI
         {
             Profiler.BeginSample("ActionCenter.New");
 
-            object[] attrs = viewType.GetCustomAttributes(typeof(InjectActionCenterAttribute), false);
+            object[] attrs = viewType.GetCustomAttributes(typeof(InjectActionsAttribute), false);
 
             if (attrs.Length != 1)
                 return null;
 
-            Type actionCenterType = (attrs[0] as InjectActionCenterAttribute).ActionCenterType;
+            Type actionCenterType = (attrs[0] as InjectActionsAttribute).ActionCenterType;
 
             if (actionCenterType.IsAbstract)
                 throw new InvalidTypeInjectionException(actionCenterType, "注入的类型必须是非抽象类型");
@@ -391,14 +410,14 @@ namespace ToaruUnity.UI
             Type type = prototype.GetType();
             ActionCenter center = Activator.CreateInstance(type) as ActionCenter;
 
-            Dictionary<int, Delegate> map = null;
-            IReadOnlyDictionary<int, Delegate> actionMap = prototype.m_ActionMap;
+            Dictionary<string, Delegate> map = null;
+            IReadOnlyDictionary<string, Delegate> actionMap = prototype.m_ActionMap;
 
             if (actionMap != null)
             {
-                map = new Dictionary<int, Delegate>(actionMap.Count);
+                map = new Dictionary<string, Delegate>(actionMap.Count);
 
-                foreach (KeyValuePair<int, Delegate> pair in actionMap)
+                foreach (KeyValuePair<string, Delegate> pair in actionMap)
                 {
                     Type delegateType = pair.Value.GetType();
                     MethodInfo method = pair.Value.Method;

@@ -46,6 +46,8 @@ namespace ToaruUnityEditor.UI
 
             EditorGUILayout.Space();
 
+            EditorGUILayout.LabelField("Event", EditorStyles.boldLabel);
+
             EditorGUILayout.PropertyField(stateChangedEvent);
             
             serializedObject.ApplyModifiedProperties();
@@ -59,8 +61,6 @@ namespace ToaruUnityEditor.UI
         {
             if (!EditorApplication.isPlaying)
                 return;
-
-            // test awake etc
 
             if (PrefabUtility.IsPartOfPrefabAsset(view))
                 return;
@@ -94,7 +94,7 @@ namespace ToaruUnityEditor.UI
                         {
                             EditorGUILayout.LabelField("Actions", EditorStyles.boldLabel);
 
-                            foreach (KeyValuePair<int, Delegate> pair in view.Actions.ActionMap)
+                            foreach (KeyValuePair<string, Delegate> pair in view.Actions.ActionMap)
                             {
                                 EditorGUILayout.LabelField($"[{pair.Key}] {pair.Value.Method.Name}");
                             }

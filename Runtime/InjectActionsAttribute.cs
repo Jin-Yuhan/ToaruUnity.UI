@@ -6,7 +6,7 @@ namespace ToaruUnity.UI
     /// 指示为类型注入<see cref="ActionCenter"/>
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public sealed class InjectActionCenterAttribute : Attribute
+    public sealed class InjectActionsAttribute : Attribute
     {
         /// <summary>
         /// 获取注入的<see cref="ActionCenter"/>的类型
@@ -17,7 +17,7 @@ namespace ToaruUnity.UI
         /// 指示为类型注入<see cref="ActionCenter"/>
         /// </summary>
         /// <param name="actionCenterType">注入的<see cref="ActionCenter"/>的类型</param>
-        public InjectActionCenterAttribute(Type actionCenterType)
+        public InjectActionsAttribute(Type actionCenterType)
         {
             ActionCenterType = actionCenterType;
         }

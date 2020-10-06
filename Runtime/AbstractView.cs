@@ -120,7 +120,7 @@ namespace ToaruUnity.UI
             IsTransformingState = false;
             InternalKey = key;
             Actions = actionCenter;
-            Actions.RegisterStateChangeHandler(OnRefreshView);
+            Actions?.RegisterStateChangeHandler(OnRefreshView);
         }
 
         internal void TransformState(ViewState newState, object userData)

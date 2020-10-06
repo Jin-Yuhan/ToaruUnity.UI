@@ -17,6 +17,12 @@ namespace ToaruUnity.UI
         protected FadeInOutUGUIView() { }
 
 
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+            CanvasGroup.alpha = 0;
+        }
+
         protected override IEnumerator OnOpen(object userData) { return FadeIn(); }
 
         protected override IEnumerator OnClose(object userData) { return FadeOut(); }
