@@ -1,54 +1,60 @@
-﻿using System.Collections;
+﻿using System;
 using System.Collections.Generic;
-using UnityEngine;
-using UnityEditor;
 using ToaruUnity.UI;
+using UnityEditor;
 using UnityEditorInternal;
-using System;
+using UnityEngine;
 
 namespace ToaruUnityEditor.UI
 {
     [CustomEditor(typeof(AbstractView), true)]
     internal sealed class ViewEditor : Editor
     {
-        private bool m_DebugFoldout = false;
+        private const string TransitionsFieldName = "m_Transitions";
+        private const string OnBeforeTransitionFieldName = "m_OnBeforeTransition";
+        private const string OnAfterTransitionFieldName = "m_OnAfterTransition";
+
+        private ReorderableList m_Transitions;
+
+        private void OnEnable()
+        {
+            m_Transitions = new ReorderableList(serializedObject, serializedObject.FindProperty(TransitionsFieldName), true, true, true, true);
+            m_Transitions.drawHeaderCallback = (Rect rect) =>
+            {
+                GUIContent content = new GUIContent($"Transitions ({m_Transitions.serializedProperty.arraySize})", m_Transitions.serializedProperty.tooltip);
+                EditorGUI.LabelField(rect, content);
+            };
+            m_Transitions.elementHeightCallback = (int index) =>
+            {
+                SerializedProperty property = m_Transitions.serializedProperty.GetArrayElementAtIndex(index);
+                return EditorGUI.GetPropertyHeight(property) + EditorGUIUtility.singleLineHeight * 0.5f;
+            };
+            m_Transitions.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
+            {
+                SerializedProperty property = m_Transitions.serializedProperty.GetArrayElementAtIndex(index);
+                EditorGUI.PropertyField(rect, property);
+            };
+        }
 
         public override void OnInspectorGUI()
         {
-            AbstractView view = target as AbstractView;
+            SerializedProperty it = serializedObject.GetIterator();
+            it.NextVisible(true);
 
-            ViewGUIUtility.DrawViewDebugInfo(view, ref m_DebugFoldout);
-
-            SerializedProperty p = serializedObject.GetIterator();
-
-            p.NextVisible(true);
-            p.NextVisible(false);
-            SerializedProperty stateChangedEvent = p.Copy();
-
-            if (view is FadeInOutUGUIView)
+            while (it.NextVisible(false))
             {
-                EditorGUILayout.LabelField("Fade Settings", EditorStyles.boldLabel);
-
-                p.NextVisible(false);
-                EditorGUILayout.PropertyField(p);
-                p.NextVisible(false);
-                EditorGUILayout.PropertyField(p);
-
-                EditorGUILayout.Space();
-            }
-
-            EditorGUILayout.LabelField("Fields", EditorStyles.boldLabel);
-
-            while (p.NextVisible(false))
-            {
-                EditorGUILayout.PropertyField(p);
+                if (it.name != TransitionsFieldName && it.name != OnBeforeTransitionFieldName && it.name != OnAfterTransitionFieldName)
+                {
+                    EditorGUILayout.PropertyField(it);
+                }
             }
 
             EditorGUILayout.Space();
 
-            EditorGUILayout.LabelField("Event", EditorStyles.boldLabel);
+            m_Transitions.DoLayoutList();
 
-            EditorGUILayout.PropertyField(stateChangedEvent);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty(OnBeforeTransitionFieldName));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty(OnAfterTransitionFieldName));
             
             serializedObject.ApplyModifiedProperties();
         }
@@ -71,12 +77,12 @@ namespace ToaruUnityEditor.UI
             {
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    EditorGUILayout.LabelField($"Key: {GetObjString(view.InternalKey)}");
+                    //EditorGUILayout.LabelField($"Key: {GetObjString(view.InternalObjKey)}");
 
                     EditorGUILayout.LabelField("ViewState", EditorStyles.boldLabel);
-                    if (view.IsTransformingState)
+                    if (view.IsTransiting)
                     {
-                        EditorGUILayout.HelpBox($"Transforming({view.RemainingTransformStateTaskCount} Remains)", MessageType.Warning);
+                        EditorGUILayout.HelpBox($"Transforming({view.RemainingTransitionCount} Remains)", MessageType.Warning);
                     }
                     else
                     {

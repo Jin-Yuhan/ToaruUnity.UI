@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+using UnityEngine;
 using UnityEngine.Profiling;
 
 namespace ToaruUnity.UI
@@ -33,7 +34,7 @@ namespace ToaruUnity.UI
         /// 当状态改变时的处理方法
         /// </summary>
         /// <param name="state">当前的状态</param>
-        public delegate void StateChangeHandler(IActionState state);
+        internal delegate void StateChangeHandler(IActionState state);
 
         // 如果返回值为true，自动调用StateChangeHandler
         private delegate bool ActionHandler();
@@ -58,9 +59,9 @@ namespace ToaruUnity.UI
         private IActionState m_State;
 
         /// <summary>
-        /// 获取对<see cref="UIManager"/>的引用
+        /// 获取对<see cref="IUIManager"/>的引用
         /// </summary>
-        protected UIManager Manager { get; private set; }
+        protected IUIManager Manager { get; private set; }
 
         /// <summary>
         /// 获取ActionMap
@@ -100,7 +101,7 @@ namespace ToaruUnity.UI
         protected ActionCenter() { }
 
         
-        public void Dispatch(string name)
+        public void Execute(string name)
         {
             if (TryGetActionHandler(name, out Delegate func))
             {
@@ -122,9 +123,13 @@ namespace ToaruUnity.UI
                         break;
                 }
             }
+            else
+            {
+                Debug.LogWarning("未找到操作：" + name);
+            }
         }
 
-        public void Dispatch<T0>(string name, T0 arg0)
+        public void Execute<T0>(string name, T0 arg0)
         {
             if (TryGetActionHandler(name, out Delegate func))
             {
@@ -146,9 +151,13 @@ namespace ToaruUnity.UI
                         break;
                 }
             }
+            else
+            {
+                Debug.LogWarning("未找到操作：" + name);
+            }
         }
 
-        public void Dispatch<T0, T1>(string name, T0 arg0, T1 arg1)
+        public void Execute<T0, T1>(string name, T0 arg0, T1 arg1)
         {
             if (TryGetActionHandler(name, out Delegate func))
             {
@@ -170,9 +179,13 @@ namespace ToaruUnity.UI
                         break;
                 }
             }
+            else
+            {
+                Debug.LogWarning("未找到操作：" + name);
+            }
         }
 
-        public void Dispatch<T0, T1, T2>(string name, T0 arg0, T1 arg1, T2 arg2)
+        public void Execute<T0, T1, T2>(string name, T0 arg0, T1 arg1, T2 arg2)
         {
             if (TryGetActionHandler(name, out Delegate func))
             {
@@ -194,9 +207,13 @@ namespace ToaruUnity.UI
                         break;
                 }
             }
+            else
+            {
+                Debug.LogWarning("未找到操作：" + name);
+            }
         }
 
-        public void Dispatch<T0, T1, T2, T3>(string name, T0 arg0, T1 arg1, T2 arg2, T3 arg3)
+        public void Execute<T0, T1, T2, T3>(string name, T0 arg0, T1 arg1, T2 arg2, T3 arg3)
         {
             if (TryGetActionHandler(name, out Delegate func))
             {
@@ -218,6 +235,10 @@ namespace ToaruUnity.UI
                         break;
                 }
             }
+            else
+            {
+                Debug.LogWarning("未找到操作：" + name);
+            }
         }
 
         // 不重置StateChangeHandler
@@ -233,7 +254,7 @@ namespace ToaruUnity.UI
         /// </summary>
         /// <typeparam name="T">状态的类型，该类型必须为引用类型，且实现<see cref="IActionState"/>接口</typeparam>
         /// <returns>经过类型转换后的状态对象</returns>
-        protected T GetState<T>() where T : class, IActionState { return m_State as T; }
+        public T GetState<T>() where T : class, IActionState { return m_State as T; }
 
         /// <summary>
         /// 重写该方法，修改Action处理方法的匹配模式（默认为<see cref="BindingFlags.Instance"/> | <see cref="BindingFlags.Public"/>）。
@@ -292,12 +313,12 @@ namespace ToaruUnity.UI
             m_StateChangeHandler = stateChangeHandler ?? throw new ArgumentNullException(nameof(stateChangeHandler));
         }
 
-        private void Initialize(UIManager manager)
+        private void Initialize(IUIManager manager)
         {
             Initialize(GetActionMap(), manager);
         }
 
-        private void Initialize(IReadOnlyDictionary<string, Delegate> actionMap, UIManager manager)
+        private void Initialize(IReadOnlyDictionary<string, Delegate> actionMap, IUIManager manager)
         {
             m_ActionMap = actionMap;
             m_Coroutines = null;
@@ -362,14 +383,15 @@ namespace ToaruUnity.UI
 
                     for (int i = 0; i < attrs.Length; i++)
                     {
-                        ActionAttribute attr = attrs[i] as ActionAttribute;
-
-                        if (map == null)
+                        if (attrs[i] is ActionAttribute attr)
                         {
-                            map = new Dictionary<string, Delegate>();
-                        }
+                            if (map == null)
+                            {
+                                map = new Dictionary<string, Delegate>(StringComparer.Ordinal);
+                            }
 
-                        map.Add(attr.ActionName ?? method.Name, callback);
+                            map.Add(attr.ActionName ?? method.Name, callback);
+                        }
                     }
                 }
             }
@@ -405,6 +427,9 @@ namespace ToaruUnity.UI
 
         internal static ActionCenter Clone(ActionCenter prototype)
         {
+            if (prototype == null)
+                return null;
+
             Profiler.BeginSample("ActionCenter.Clone");
 
             Type type = prototype.GetType();
@@ -415,7 +440,7 @@ namespace ToaruUnity.UI
 
             if (actionMap != null)
             {
-                map = new Dictionary<string, Delegate>(actionMap.Count);
+                map = new Dictionary<string, Delegate>(actionMap.Count, StringComparer.Ordinal);
 
                 foreach (KeyValuePair<string, Delegate> pair in actionMap)
                 {

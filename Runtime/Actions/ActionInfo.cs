@@ -46,20 +46,20 @@ namespace ToaruUnity.UI
         }
 
 
-        public void Dispatch()
-            => m_Center.Dispatch(ActionName);
+        public void Execute()
+            => m_Center.Execute(ActionName);
 
-        public void Dispatch<T0>(T0 arg0)
-            => m_Center.Dispatch(ActionName, arg0);
+        public void Execute<T0>(T0 arg0)
+            => m_Center.Execute(ActionName, arg0);
 
-        public void Dispatch<T0, T1>(T0 arg0, T1 arg1)
-            => m_Center.Dispatch(ActionName, arg0, arg1);
+        public void Execute<T0, T1>(T0 arg0, T1 arg1)
+            => m_Center.Execute(ActionName, arg0, arg1);
 
-        public void Dispatch<T0, T1, T2>(T0 arg0, T1 arg1, T2 arg2)
-            => m_Center.Dispatch(ActionName, arg0, arg1, arg2);
+        public void Execute<T0, T1, T2>(T0 arg0, T1 arg1, T2 arg2)
+            => m_Center.Execute(ActionName, arg0, arg1, arg2);
 
-        public void Dispatch<T0, T1, T2, T3>(T0 arg0, T1 arg1, T2 arg2, T3 arg3)
-            => m_Center.Dispatch(ActionName, arg0, arg1, arg2, arg3);
+        public void Execute<T0, T1, T2, T3>(T0 arg0, T1 arg1, T2 arg2, T3 arg3)
+            => m_Center.Execute(ActionName, arg0, arg1, arg2, arg3);
 
         public bool Equals(ActionInfo other)
         {

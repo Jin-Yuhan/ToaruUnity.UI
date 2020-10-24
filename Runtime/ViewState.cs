@@ -3,7 +3,7 @@
     /// <summary>
     /// 表示界面的状态
     /// </summary>
-    public enum ViewState : byte
+    public enum ViewState
     {
         /// <summary>
         /// 表示界面处于被关闭状态

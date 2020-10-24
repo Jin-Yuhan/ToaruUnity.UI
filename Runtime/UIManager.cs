@@ -1,22 +1,39 @@
 ﻿using System;
 using System.Collections.Generic;
-using ToaruUnity.UI.Settings;
+using System.Runtime.CompilerServices;
 using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.Events;
 using Object = UnityEngine.Object;
+
+#pragma warning disable IDE0032
+#pragma warning disable CS0649
 
 namespace ToaruUnity.UI
 {
     /// <summary>
     /// UI管理类
     /// </summary>
-    public sealed class UIManager
+    [DisallowMultipleComponent]
+    public class UIManager : MonoBehaviour, IUIManager
     {
-        private readonly ViewStack m_Stack;
-        private readonly ViewLoader m_Loader;
-        private readonly ToaruUISettings m_Settings;
-        private readonly Dictionary<object, ViewCache> m_Cache;
-        private Transform m_Canvas;
+        [Header("Settings")]
+
+        [SerializeField, Range(1, 20)] private int m_StackMinGrow = 5;
+        [SerializeField, Range(1, 40)] private int m_StackMaxGrow = 10;
+        [SerializeField] private Transform m_ViewContainer;
+        [SerializeField] private ViewLoader m_ViewLoader;
+
+        [Header("Events")]
+
+        [SerializeField] private ViewEvent m_OnViewOpened;
+        [SerializeField] private ViewEvent m_OnViewNavigated;
+        [SerializeField] private ViewKeyEvent m_OnViewClosed;
+        [SerializeField] private UnityEvent m_OnActiveViewChanged;
+
+        private IEqualityComparer<object> m_KeyComparer;
+        private ViewStack m_Stack;
+        private HybridDictionary<object, ViewPrefab> m_Prefabs;
+        private HybridDictionary<object, AbstractView> m_ViewPool; // 每一种View只缓存一份
 
 
         /// <summary>
@@ -25,265 +42,294 @@ namespace ToaruUnity.UI
         public int ViewCount => m_Stack.Count;
 
         /// <summary>
-        /// 获取Canvas
+        /// 获取页面的容器
         /// </summary>
-        /// <exception cref="InvalidOperationException">场景中没有Canvas对象</exception>
-        /// <exception cref="ArgumentNullException">value为null</exception>
-        public Transform Canvas
-        {
-            get
-            {
-                if (!m_Canvas)
-                {
-                    GameObject go = GameObject.FindGameObjectWithTag(m_Settings.CanvasTag);
+        public Transform ViewContainer => m_ViewContainer;
 
-                    if (go == null)
-                    {
-                        throw new InvalidOperationException("场景中没有Canvas对象");
-                    }
-
-                    m_Canvas = go.transform;
-                }
-
-                return m_Canvas;
-            }
-            set => m_Canvas = value ?? throw new ArgumentNullException("canvas");
-        }
+        /// <summary>
+        /// 获取页面Key的比较器
+        /// </summary>
+        public IEqualityComparer<object> ViewKeyComparer => m_KeyComparer;
 
         /// <summary>
         /// 打开页面事件
         /// </summary>
-        public event Action<AbstractView> OnOpenView
+        public event UnityAction<object, AbstractView> OnViewOpened
         {
-            add => m_Stack.OnPushView += value;
-            remove => m_Stack.OnPushView -= value;
+            add => m_OnViewOpened.AddListener(value);
+            remove => m_OnViewOpened.RemoveListener(value);
+        }
+
+        /// <summary>
+        /// 导航到页面事件
+        /// </summary>
+        public event UnityAction<object, AbstractView> OnViewNavigated
+        {
+            add => m_OnViewNavigated.AddListener(value);
+            remove => m_OnViewNavigated.RemoveListener(value);
         }
 
         /// <summary>
         /// 关闭页面事件
         /// </summary>
-        public event Action<AbstractView> OnCloseView
+        public event UnityAction<object> OnViewClosed
         {
-            add => m_Stack.OnPopView += value;
-            remove => m_Stack.OnPopView -= value;
+            add => m_OnViewClosed.AddListener(value);
+            remove => m_OnViewClosed.RemoveListener(value);
+        }
+
+        /// <summary>
+        /// 顶部页面变化事件
+        /// </summary>
+        public event UnityAction OnActiveViewChanged
+        {
+            add => m_OnActiveViewChanged.AddListener(value);
+            remove => m_OnActiveViewChanged.RemoveListener(value);
+        }
+
+        /// <summary>
+        /// 获取顶部的页面
+        /// </summary>
+        public AbstractView ActiveView => m_Stack[0];
+
+
+        public UIManager() { }
+
+
+        private void Awake()
+        {
+            m_KeyComparer = CreateViewKeyComparer() ?? throw new NullReferenceException("ViewKeyComparer");
+            m_Stack = new ViewStack(m_StackMinGrow, m_StackMaxGrow, m_KeyComparer);
+            m_Prefabs = new HybridDictionary<object, ViewPrefab>(m_KeyComparer);
+            m_ViewPool = new HybridDictionary<object, AbstractView>(m_KeyComparer);
+
+            if (!m_ViewContainer)
+            {
+                Debug.LogError("ViewContainer is missing!");
+            }
+
+            if (!m_ViewLoader)
+            {
+                Debug.LogError("ViewLoader is missing!");
+            }
+        }
+
+        private void OnDestroy()
+        {
+            foreach (KeyValuePair<object, ViewPrefab> pair in m_Prefabs)
+            {
+                m_ViewLoader.ReleaseViewPrefab(pair.Key, pair.Value.RawPrefab);
+            }
+        }
+
+        protected virtual IEqualityComparer<object> CreateViewKeyComparer()
+        {
+            return EqualityComparer<object>.Default;
         }
 
 
-        /// <summary>
-        /// 创建一个新的UIManager实例
-        /// </summary>
-        /// <param name="loader">页面的加载器</param>
-        /// <param name="settings">设置</param>
-        /// <exception cref="ArgumentNullException"><paramref name="loader"/>为null</exception>
-        public UIManager(ViewLoader loader, ToaruUISettings settings)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OpenNewView(object viewKey)
         {
-            m_Stack = new ViewStack(settings.StackMinGrow);
-            m_Loader = loader ?? throw new ArgumentNullException(nameof(loader));
-            m_Settings = settings;
-            m_Cache = new Dictionary<object, ViewCache>();
-            m_Canvas = null;
+            SwitchView(viewKey, SwitchViewMode.OpenNew, null, default);
+        }
 
-            if (settings.AutoClearWhenUnloadingScene)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void NavigateToView(object viewKey)
+        {
+            SwitchView(viewKey, SwitchViewMode.Navigate, null, default);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SwitchView(object viewKey, SwitchViewMode mode)
+        {
+            SwitchView(viewKey, mode, null, default);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SwitchView(object viewKey, SwitchViewMode mode, SwitchViewParameters parameters)
+        {
+            SwitchView(viewKey, mode, null, parameters);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SwitchView(object viewKey, SwitchViewMode mode, SwitchViewCallbackHandler callback)
+        {
+            SwitchView(viewKey, mode, callback, default);
+        }
+
+        public void SwitchView(object viewKey, SwitchViewMode mode, SwitchViewCallbackHandler callback, SwitchViewParameters parameters)
+        {
+            if (viewKey == null)
             {
-                SceneManager.sceneUnloaded += (_) =>
+                callback?.Invoke(SwitchViewResult.Failed_BecauseKeyIsNull, null, null);
+                return;
+            }
+
+            if (mode == SwitchViewMode.None)
+            {
+                callback?.Invoke(SwitchViewResult.Failed_BecauseModeIsNone, viewKey, null);
+                return;
+            }
+
+            //先导航
+            if ((mode & SwitchViewMode.Navigate) == SwitchViewMode.Navigate)
+            {
+                if (m_Stack.MatchTopKey(viewKey))
                 {
-                    Clear(true);
-                };
+                    // 要导航的页面已经在最顶层
+                    callback?.Invoke(SwitchViewResult.Failed_BecauseNavigationIsUnnecessary, viewKey, ActiveView);
+                    return;
+                }
+
+                if (m_Stack.TryMoveToTop(viewKey, out AbstractView navigatedView, parameters.NavigateViewParam, parameters.SuspendViewParam))
+                {
+                    m_OnViewNavigated.Invoke(viewKey, navigatedView);
+                    m_OnActiveViewChanged.Invoke();
+                    callback?.Invoke(SwitchViewResult.Navigated, viewKey, navigatedView);
+                    return;
+                }
             }
-        }
-
-
-        /// <summary>
-        /// 打开一个新的页面
-        /// </summary>
-        /// <param name="key">页面的key</param>
-        /// <param name="userData">用户数据</param>
-        public void Open(object key, object userData = null)
-        {
-            if (m_Cache.TryGetValue(key, out ViewCache cache))
+            
+            if ((mode & SwitchViewMode.OpenNew) == SwitchViewMode.OpenNew)
             {
-                OpenView(cache, userData);
-            }
-            else
-            {
-                m_Loader.Load(key, LoadViewCallback, userData);
+                if (m_ViewPool.TryGetAndRemoveValue(viewKey, out AbstractView view))
+                {
+                    PushViewInstance(viewKey, view, callback, parameters.OpenViewParam, parameters.SuspendViewParam);
+                }
+                else if (m_Prefabs.TryGetValue(viewKey, out ViewPrefab prefab))
+                {
+                    PushViewInstance(viewKey, prefab, callback, parameters.OpenViewParam, parameters.SuspendViewParam);
+                }
+                else
+                {
+                    PushViewInstance(viewKey, callback, parameters.OpenViewParam, parameters.SuspendViewParam);
+                }
             }
         }
 
-        private void OpenView(ViewCache cache, object userData)
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CloseActiveView()
         {
-            AbstractView view = cache.AllocateView(Canvas);
-            m_Stack.Push(view, userData);
+            return CloseActiveView(out _, default);
         }
 
-        private void LoadViewCallback(object key, AbstractView prefab, object userData)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CloseActiveView(out object removedViewKey)
+        {
+            return CloseActiveView(out removedViewKey, default);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CloseActiveView(CloseViewParameters parameters)
+        {
+            return CloseActiveView(out _, parameters);
+        }
+
+        public bool CloseActiveView(out object removedViewKey, CloseViewParameters parameters)
+        {
+            if (m_Stack.TryPop(parameters.CloseViewParam, parameters.ResumeViewParam, out removedViewKey, out _))
+            {
+                m_OnViewClosed.Invoke(removedViewKey);
+                m_OnActiveViewChanged.Invoke();
+                return true;
+            }
+
+            return false;
+        }
+
+        private void PushViewInstance(object viewKey, AbstractView view, SwitchViewCallbackHandler callback, object openViewParam, object suspendViewParam)
+        {
+            view.Transform.SetParent(ViewContainer);
+            m_Stack.Push(viewKey, view, openViewParam, suspendViewParam);
+
+            m_OnViewOpened.Invoke(viewKey, view);
+            m_OnActiveViewChanged.Invoke();
+            callback?.Invoke(SwitchViewResult.NewViewOpened, viewKey, view);
+        }
+
+        private void PushViewInstance(object viewKey, ViewPrefab prefab, SwitchViewCallbackHandler callback, object openViewParam, object suspendViewParam)
+        {
+            AbstractView view = prefab.Instantiate(ViewContainer);
+            view.OnAfterTransition += v => 
+            {
+                if (v && v.State == ViewState.Closed)
+                {
+                    if ((!this) || m_ViewPool.ContainsKey(viewKey))
+                    {
+                        Destroy(v.gameObject);
+                    }
+                    else
+                    {
+                        m_ViewPool.Add(viewKey, v);
+                    }
+                }
+            };
+            PushViewInstance(viewKey, view, callback, openViewParam, suspendViewParam);
+        }
+
+        private void PushViewInstance(object viewKey, SwitchViewCallbackHandler callback, object openViewParam, object suspendViewParam)
+        {
+            m_ViewLoader.LoadViewPrefab(viewKey, prefab =>
+            {
+                AddViewPrefab(viewKey, prefab, out ViewPrefab viewPrefab);
+                PushViewInstance(viewKey, viewPrefab, callback, openViewParam, suspendViewParam);
+            });
+        }
+
+        private void AddViewPrefab(object viewKey, AbstractView prefab, out ViewPrefab viewPrefab)
         {
             Type viewType = prefab.GetType();
             ActionCenter center = ActionCenter.New(viewType, this);
-            ViewCache cache = new ViewCache(m_Settings, key, prefab, center);
+            viewPrefab = new ViewPrefab(prefab, center);
 
-            m_Cache.Add(key, cache);
-            OpenView(cache, userData);
+            m_Prefabs.Add(viewKey, viewPrefab);
         }
 
-
-        /// <summary>
-        /// 关闭顶部页面
-        /// </summary>
-        /// <param name="userData">用户数据</param>
-        public void CloseTop(object userData = null)
+        
+        private class ViewPrefab
         {
-            m_Stack.Pop(userData);
-        }
-
-        /// <summary>
-        /// 关闭所有页面
-        /// </summary>
-        /// <param name="userData">用户数据</param>
-        public void CloseAll(object userData = null)
-        {
-            m_Stack.Clear(userData);
-        }
-
-        /// <summary>
-        /// 释放页面的缓存
-        /// </summary>
-        /// <param name="key">页面的key</param>
-        /// <param name="destroy">是否直接销毁缓存</param>
-        public void ReleaseViewCache(object key, bool destroy)
-        {
-            if (m_Cache.TryGetValue(key, out ViewCache cache))
-            {
-                cache.Release(m_Loader, destroy);
-
-                if (destroy)
-                {
-                    m_Cache.Remove(key);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 清理全部缓存
-        /// </summary>
-        /// <param name="destroyCache">是否直接销毁缓存</param>
-        public void Clear(bool destroyCache)
-        {
-            m_Canvas = null;
-            m_Stack.Clear(null);
-
-            foreach (ViewCache cache in m_Cache.Values)
-            {
-                cache.Release(m_Loader, destroyCache);
-            }
-
-            if (destroyCache)
-            {
-                m_Cache.Clear();
-            }
-        }
-
-
-        private sealed class ViewCache
-        {
-            private readonly object m_Key;
-            private readonly ActionCenter m_Center;
-            private readonly AbstractView[] m_ViewPool;
-            private AbstractView m_Prefab;
-            private int m_ObjectCount;
+            private readonly AbstractView m_ViewObj;
+            private readonly ActionCenter m_CenterObj;
             private bool m_IsCenterUsed;
 
-            public ViewCache(ToaruUISettings settings, object key, AbstractView prefab, ActionCenter center)
-            {
-                m_Key = key;
-                m_Center = center;
-                int size = settings.UIObjPoolSize;
-                m_ViewPool = size == 0 ? Array.Empty<AbstractView>() : new AbstractView[size];
+            public AbstractView RawPrefab => m_ViewObj;
 
-                m_Prefab = prefab;
-                m_ObjectCount = 0;
+            public ViewPrefab(AbstractView prefab, ActionCenter center)
+            {
+                m_ViewObj = prefab;
+                m_CenterObj = center;
                 m_IsCenterUsed = false;
             }
 
-            public AbstractView AllocateView(Transform canvas)
+            public AbstractView Instantiate(Transform container)
             {
-                AbstractView view;
+                ActionCenter center = AllocateCenter();
+                AbstractView view = Object.Instantiate(m_ViewObj, container, false);
 
-                if (m_ObjectCount == 0)
-                {
-                    ActionCenter center = AllocateCenter();
-                    view = Object.Instantiate(m_Prefab, canvas, false);
-
-                    view.Initialize(m_Key, center);
-                    view.OnStateChanged += OnViewStateChanged;
-                }
-                else
-                {
-                    view = m_ViewPool[--m_ObjectCount];
-                    view.Transform.SetParent(canvas, false);
-
-                    m_ViewPool[m_ObjectCount] = default;
-                }
-
+                view.Create(center);
                 return view;
-            }
-
-            private void OnViewStateChanged(AbstractView view, ViewState state)
-            {
-                // 不取消注册事件，下次还会使用
-
-                if (state == ViewState.Closed)
-                {
-                    FreeView(view);
-                }
-            }
-
-            private void FreeView(AbstractView view)
-            {
-                // 如果prefab为空，那么当前缓存对象已经被销毁了
-
-                if (m_Prefab && m_ObjectCount < m_ViewPool.Length)
-                {
-                    m_ViewPool[m_ObjectCount++] = view;
-                }
-                else
-                {
-                    Object.Destroy(view.gameObject);
-                }
             }
 
             private ActionCenter AllocateCenter()
             {
                 if (m_IsCenterUsed)
                 {
-                    return ActionCenter.Clone(m_Center);
+                    return ActionCenter.Clone(m_CenterObj);
                 }
 
                 m_IsCenterUsed = true;
-                return m_Center;
-            }
-
-            /// <summary>
-            /// 如果直接销毁，就无法重用
-            /// </summary>
-            /// <param name="loader"></param>
-            /// <param name="destroy">是否直接销毁</param>
-            public void Release(ViewLoader loader, bool destroy)
-            {
-                for (int i = 0; i < m_ObjectCount; i++)
-                {
-                    Object.Destroy(m_ViewPool[i]);
-                    m_ViewPool[i] = default;
-                }
-
-                m_ObjectCount = 0;
-                //m_IsCenterUsed = false; // center是一次性的
-
-                if (destroy)
-                {
-                    loader.Release(m_Key, ref m_Prefab);
-                }
+                return m_CenterObj;
             }
         }
+
+        // (object viewKey, AbstractView view)
+        [Serializable]
+        private sealed class ViewEvent : UnityEvent<object, AbstractView> { }
+
+        // (object viewKey)
+        [Serializable]
+        private sealed class ViewKeyEvent : UnityEvent<object> { }
     }
 }

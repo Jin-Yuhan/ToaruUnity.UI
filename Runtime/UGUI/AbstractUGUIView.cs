@@ -19,7 +19,7 @@ namespace ToaruUnity.UI
         protected AbstractUGUIView() { }
 
 
-        protected override IEnumerator OnOpen(object userData)
+        protected override IEnumerator OnOpen(object data)
         {
             CanvasGroup.alpha = 1;
             CanvasGroup.blocksRaycasts = true;
@@ -27,7 +27,7 @@ namespace ToaruUnity.UI
             return null;
         }
 
-        protected override IEnumerator OnClose(object userData)
+        protected override IEnumerator OnClose(object data)
         {
             CanvasGroup.alpha = 0;
             CanvasGroup.blocksRaycasts = false;
@@ -35,14 +35,14 @@ namespace ToaruUnity.UI
             return null;
         }
 
-        protected override IEnumerator OnResume(object userData)
+        protected override IEnumerator OnResume(object data)
         {
             CanvasGroup.blocksRaycasts = true;
 
             return null;
         }
 
-        protected override IEnumerator OnSuspend(object userData)
+        protected override IEnumerator OnSuspend(object data)
         {
             CanvasGroup.blocksRaycasts = false;
 
